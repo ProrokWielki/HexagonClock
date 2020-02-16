@@ -62,7 +62,7 @@ std::map<std::string, std::function<void(byte * payload, unsigned int length)>> 
 {"get_humidity", [](byte * payload, unsigned int length) { double_publisher("humidity", bme_.hum()); }},
 {"get_pressure", [](byte * payload, unsigned int length) { double_publisher("pressure", bme_.pres(BME280::PresUnit_hPa)); }}};
 
-auto wait_for_initialization = [](std::fucntion<bool(void)> checker, uint16_t status_led_inded, uint8_t red, uint8_t green, uint8_t blue) {
+auto wait_for_initialization = [](std::function<bool(void)> checker, uint16_t status_led_inded, uint8_t red, uint8_t green, uint8_t blue) {
     display::turn_on_led(pixels_, status_led_inded, red, green, blue);
     while (checker())
     {
@@ -90,7 +90,7 @@ void setup()
 
     mqtt_.setCallback([](char * topic, byte * payload, unsigned int length) { handle_topic[topic](payload, length); });
 
-    mqtt::subscribe(mqtt_, {"get_brightness", "get_temperature", "get_humidity", "get_pressure", "show", "set_led", "clear"});
+    mqtt::subscribe(mqtt_, handle_topic);
 }
 
 void loop()

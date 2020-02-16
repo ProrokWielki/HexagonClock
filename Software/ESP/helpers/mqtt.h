@@ -6,11 +6,11 @@
 namespace mqtt
 {
 
-void subscribe(PubSubClient & mqtt, const std::initializer_list<const char *> & topics_to_subscribe)
+void subscribe(PubSubClient & mqtt, const std::map<std::string, std::function<void(byte * payload, unsigned int length)>> & topics_to_subscribe)
 {
     for (const auto & topic : topics_to_subscribe)
     {
-        mqtt.subscribe(topic);
+        mqtt.subscribe(topic.first.c_str());
     }
 }
 
