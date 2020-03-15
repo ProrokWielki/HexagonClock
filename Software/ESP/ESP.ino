@@ -35,26 +35,38 @@ auto double_publisher = [](std::string topic, double value) {
     mqtt_.publish(topic.c_str(), str_value);
 };
 
-auto handle_set_led = [](byte * string, unsigned int length) {
-    // it probably can be done better.
-
+uint8_t split_string_to_uints16(byte * string, unsigned int length, uint16_t * output)
+{
+    // it could be a tamplate function - maybe in the future :)
     std::string strin(reinterpret_cast<char *>(string), length);
 
     uint8_t i = 0;
-    uint16_t data[4];
 
     std::istringstream iss(strin);
     std::string item;
     while (std::getline(iss, item, ' '))
     {
-        data[i++] = atoi(item.c_str());
+        output[i++] = atoi(item.c_str());
     }
 
+    return i;
+}
+
+auto handle_set_led = [](byte * string, unsigned int length) {
+    uint16_t data[4];
+    split_string_to_uints16(string, length, data);
     pixels_.setPixelColor(data[0], pixels_.gamma32(pixels_.Color(data[1], data[2], data[3])));
+};
+
+auto handle_fill_leds = [](byte * string, unsigned int length) {
+    uint16_t data[5];
+    split_string_to_uints16(string, length, data);
+    pixels_.fill(pixels_.gamma32(pixels_.Color(data[0], data[1], data[2])), data[3], data[4]);
 };
 
 std::map<std::string, std::function<void(byte * payload, unsigned int length)>> handle_topic{
 {"set_led", handle_set_led},
+{"fill_leds", handle_fill_leds},
 {"show", [](byte * payload, unsigned int length) { pixels_.show(); }},
 {"clear", [](byte * payload, unsigned int length) { pixels_.clear(); }},
 {"get_brightness", [](byte * payload, unsigned int length) { double_publisher("brightness", apds_.readLuxLevel()); }},
@@ -79,6 +91,7 @@ void setup()
 
     ota::initialize();
 
+    WiFi.hostname(wifi::hostname);
     WiFi.begin(wifi::ssid, wifi::password);
     wait_for_initialization([]() { return not WiFi.status() == WL_CONNECTED; }, 0, 0, 0, 255);
 
