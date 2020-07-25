@@ -151,11 +151,15 @@ def thread_function():
 
     while(True):
         client.publish("get_brightness", "")
+        time.sleep(1)
         client.publish("get_temperature", "")
+        time.sleep(1)
         client.publish("get_humidity", "")
+        time.sleep(1)
         client.publish("get_pressure", "")
-        time.sleep(5)
+        time.sleep(1)
         client.publish("model_dump", str(json.dumps(Model, default=lambda o: props(o))))
+        time.sleep(1)
 
 
 x = Thread(target=thread_function)
