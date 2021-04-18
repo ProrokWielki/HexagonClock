@@ -10,6 +10,8 @@
 
 #include <Sparkfun_APDS9301_Library.h>
 
+#include <RemoteDebug.h>
+
 #include "config/apds9301_config.h"
 #include "config/i2c_config.h"
 #include "config/leds_config.h"
@@ -20,6 +22,8 @@
 #include "helpers/mqtt.h"
 #include "helpers/ota.h"
 
+RemoteDebug Debug;
+
 APDS9301 apds_;
 BME280I2C::Settings settings(BME280::OSR_X1, BME280::OSR_X1, BME280::OSR_X1, BME280::Mode_Forced, BME280::StandbyTime_1000ms, BME280::Filter_Off,
                              BME280::SpiEnable_False, 0x77);
@@ -27,6 +31,12 @@ BME280I2C bme_(settings);
 WiFiClient wifi_;
 PubSubClient mqtt_(mqtt::server_ip, mqtt::server_port, wifi_);
 Adafruit_NeoPixel pixels_(leds::number_of_leds, leds::controll_pin, NEO_GRB + NEO_KHZ800);
+
+int debug_iterator=0;
+bool is_turned_on=false;
+long lastReconnectAttemptMqtt = 0;
+long lastReconnectAttemptWifi = 0;
+uint8_t reconnect_attempts = 0;
 
 auto double_publisher = [](std::string topic, double value) {
     // get rid of magic numbers
@@ -85,6 +95,12 @@ auto wait_for_initialization = [](std::function<bool(void)> checker, uint16_t st
 
 void setup()
 {
+    Serial.begin(115200);
+    Debug.begin(wifi::hostname);
+    Serial.println("---------setup-------------");
+    debugA("---------setup-------------");
+
+
     Wire.begin(i2c::sda_pin, i2c::scl_pin);
 
     pixels_.begin();
@@ -94,22 +110,110 @@ void setup()
     WiFi.hostname(wifi::hostname);
     WiFi.begin(wifi::ssid, wifi::password);
     wait_for_initialization([]() { return not WiFi.status() == WL_CONNECTED; }, 0, 0, 0, 255);
+    Serial.println("wifi connected");
+    debugA("wifi connected");
 
     wait_for_initialization([]() { return not apds_.begin(apds9301::address) == APDS9301::status::SUCCESS; }, 0, 0, 255, 0);
+    Serial.println("apds9301 connected");
+    debugA("apds9301 connected");
 
     wait_for_initialization([]() { return not bme_.begin(); }, 0, 255, 0, 0);
+    Serial.println("bme_ connected");
+    debugA("bme_ connected");
 
     wait_for_initialization([]() { return not mqtt_.connect(mqtt::client_id); }, 0, 255, 0, 0);
+    Serial.println("mqtt_ connected");
+    debugA("mqtt_ connected");
 
-    mqtt_.setCallback([](char * topic, byte * payload, unsigned int length) { ESP.wdtFeed(); handle_topic[topic](payload, length); });
+    mqtt_.setCallback([](char * topic, byte * payload, unsigned int length) { handle_topic[topic](payload, length);});
 
     mqtt::subscribe(mqtt_, handle_topic);
 
-    ESP.wdtDisable();
+    Serial.println("---------setup finished-------------");
+    debugA("---------setup finished-------------");
+}
+
+boolean reconnect()
+{
+
+    if (mqtt_.connect(mqtt::client_id))
+    {
+        mqtt::subscribe(mqtt_, handle_topic);
+    }
+    return mqtt_.connected();
 }
 
 void loop()
 {
     ota::handle();
-    mqtt_.loop();
+
+    if(WiFi.status() == WL_CONNECTED)
+    {
+        //Serial.println("wifi connected");
+        if (!mqtt_.connected())
+        {
+            reconnect_attempts++;
+            Serial.println("mqtt disconnected");
+            debugA("mqtt disconnected");
+            display::turn_on_led(pixels_, 0, 255, 0, 0);
+            long now = millis();
+            if (now - lastReconnectAttemptMqtt > 5000) {
+                lastReconnectAttemptMqtt = now;
+                // Attempt to reconnect
+                Serial.println("mqtt reconnecting ...");
+                debugA("mqtt reconnecting ...");
+                if (reconnect())
+                {
+                    Serial.println("mqtt reconnect success");
+                    debugA("mqtt reconnect success");
+                    lastReconnectAttemptMqtt = 0;
+                }
+                else
+                {
+                    Serial.println("mqtt reconnect failed");
+                    debugA("mqtt reconnect failed");
+                }
+            }
+        }
+        else
+        {
+            reconnect_attempts = 0;
+            mqtt_.loop();
+        }
+   }
+   else
+   {
+        Serial.println("wifi disconnected");
+        debugA("wifi disconnected");
+        reconnect_attempts++;
+        display::turn_on_led(pixels_, 0, 0, 255, 0);
+        long now = millis();
+        if (now - lastReconnectAttemptWifi > 5000)
+        {
+            lastReconnectAttemptWifi = now;
+            Serial.println("wifi reconnecting ...");
+            debugA("wifi reconnecting ...");
+            if (WiFi.reconnect())
+            {
+                reconnect_attempts = 0;
+                Serial.println("wifi reconnect success");
+                debugA("wifi reconnect success");
+                lastReconnectAttemptWifi = 0;
+            }
+            else
+            {
+                Serial.println("wifi reconnect failed");
+                debugA("wifi reconnect failed");
+            }
+       }
+   }
+
+   if(reconnect_attempts > 10)
+   {
+       Serial.println("Restarting !!!!!");
+       debugA("Restarting !!!!!");
+       ESP.restart();
+   }
+
+   Debug.handle();
 }
